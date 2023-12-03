@@ -1,13 +1,17 @@
 #define ARDUINO_ESP32S3_DEV
 
+#define TIMER_INTERRUPT_DEBUG       0
+#define ISR_SERVO_DEBUG             1
+
+// Select different ESP32 timer number (0-1) to avoid conflict
+#define USE_ESP32_TIMER_NO          1
+
 #include "position.h"
 
 #include <Adafruit_NeoPixel.h>
 
-// MCPWM
-#include "driver/mcpwm.h"
-#include "soc/mcpwm_reg.h"
-#include "soc/mcpwm_struct.h"
+// Update ESP32_fasttimerinterrupt.h if needed
+#include "ESP32_New_ISR_Servo.h"
 
 // BLE
 #include <BLEDevice.h>
@@ -22,26 +26,33 @@
 #define CHARACTERISTIC_UUID_4 "029cb157-efc6-4758-87fb-cd05526f1738" // Tare
 
 
-// BLE
+// /BLE
+
 //See file .../hardware/espressif/esp32/variants/(esp32|doitESP32devkitV1)/pins_arduino.h
 #define LED_BUILTIN       2         // Pin D2 mapped to pin GPIO2/ADC12 of ESP32, control on-board LED
 #define PIN_LED           2         // Pin D2 mapped to pin GPIO2/ADC12 of ESP32, control on-board LED
 
-#define PIN_D0            1         // Pin D0 mapped to pin GPIO0/BOOT/ADC11/TOUCH1 of ESP32
-#define PIN_D1            2         // Pin D1 mapped to pin GPIO1/TX0 of ESP32
-#define PIN_D2            3         // Pin D2 mapped to pin GPIO2/ADC12/TOUCH2 of ESP32
-#define PIN_D3            4         // Pin D3 mapped to pin GPIO3/RX0 of ESP32
-#define PIN_D4            5         // Pin D4 mapped to pin GPIO4/ADC10/TOUCH0 of ESP32
-#define PIN_D5            6         // Pin D5 mapped to pin GPIO5/SPISS/VSPI_SS of ESP32
-#define PIN_D6            43         // Pin D6 mapped to pin GPIO6/FLASH_SCK of ESP32
-#define PIN_D7            44         // Pin D7 mapped to pin GPIO7/FLASH_D0 of ESP32
-#define PIN_D8            7         // Pin D8 mapped to pin GPIO8/FLASH_D1 of ESP32
-#define PIN_D9            8         // Pin D9 mapped to pin GPIO9/FLASH_D2 of ESP32
-#define PIN_D10           9         // Pin D9 mapped to pin GPIO9/FLASH_D2 of ESP32
+#define PIN_D0            0         // Pin D0 mapped to pin GPIO0/BOOT/ADC11/TOUCH1 of ESP32
+#define PIN_D1            1         // Pin D1 mapped to pin GPIO1/TX0 of ESP32
+#define PIN_D2            2         // Pin D2 mapped to pin GPIO2/ADC12/TOUCH2 of ESP32
+#define PIN_D3            3         // Pin D3 mapped to pin GPIO3/RX0 of ESP32
+#define PIN_D4            4         // Pin D4 mapped to pin GPIO4/ADC10/TOUCH0 of ESP32
+#define PIN_D5            5         // Pin D5 mapped to pin GPIO5/SPISS/VSPI_SS of ESP32
+#define PIN_D6            6         // Pin D6 mapped to pin GPIO6/FLASH_SCK of ESP32
+#define PIN_D7            7         // Pin D7 mapped to pin GPIO7/FLASH_D0 of ESP32
+#define PIN_D8            8         // Pin D8 mapped to pin GPIO8/FLASH_D1 of ESP32
+#define PIN_D9            9         // Pin D9 mapped to pin GPIO9/FLASH_D2 of ESP32
+
+// Published values for SG90 servos; adjust if needed
+#define MIN_MICROS      1000  //544
+#define MAX_MICROS      2000
+
+int left_motor  = 0;
+int right_motor  = 1;
 
 // Command format:
 // 00 360 100
-// command type, angle (degrees), percent forward
+// command tyoe, angle (degrees), percent forward
 BLECharacteristic *ble_command_characteristic;
 
 BLECharacteristic *ble_command_angle;
@@ -143,47 +154,6 @@ void displayDataRate(void)
   Serial.println(" Hz");
 }
 
-#define GPIO_PWM0A_OUT 1   //HV
-#define GPIO_PWM1A_OUT 2   //HV
-
-#define PIN_NEOPIXEL   4 // On Trinket or Gemma, suggest changing this to 1
-
-int freq0 = 50; // 50 nominal, 500 theoretical limit
-int freq1 = 1000;
-
-
-void setuppwm(){
-   mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, GPIO_PWM0A_OUT);
-   mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1A, GPIO_PWM1A_OUT);
-   
- mcpwm_config_t pwm_config0;
-     pwm_config0.frequency = freq0;  //frequency 
-     pwm_config0.cmpr_a = 0;      //duty cycle of PWMxA = 50.0%
-     pwm_config0.cmpr_b = 0;      //duty cycle of PWMxB = 50.0%
-     pwm_config0.counter_mode = MCPWM_UP_COUNTER; // Up-down counter (triangle wave)
-     pwm_config0.duty_mode = MCPWM_DUTY_MODE_0; // Active HIGH
-     
-   mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config0);    //Configure PWM0A & PWM0B with above settings
-   mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_1, &pwm_config0);    //Configure PWM0A & PWM0B with above settings
-   
-   delay(20);
-   mcpwm_set_timer_sync_output(MCPWM_UNIT_0, MCPWM_TIMER_0,MCPWM_SWSYNC_SOURCE_TEZ);
-   mcpwm_sync_enable(MCPWM_UNIT_0, MCPWM_TIMER_0,MCPWM_SELECT_TIMER0_SYNC, 0);   
-   mcpwm_sync_enable(MCPWM_UNIT_0, MCPWM_TIMER_1,MCPWM_SELECT_TIMER0_SYNC, 500); 
-
-   mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_GEN_A, 1500);
-   mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_GEN_A, 1500);
-
-   delay(1000);
-  mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_GEN_A, 2000);
-   mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_GEN_A, 2000);
-   
-   delay(1000);
-    mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_GEN_A, 1500);
-   mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_GEN_A, 1500);
-   delay(1000);
- }
-
 void setup()
 {
   Serial.begin(115200);
@@ -196,10 +166,7 @@ void setup()
   pixels.show();
 
   // Wait for monitor
-  //while (!Serial);
-
-  //Initialize motors
-  setuppwm();
+  while (!Serial);
 
   // Init IMU
   Wire.setPins(SDA, SCL);
@@ -272,6 +239,25 @@ void setup()
 
   // /BLE
 
+  Serial.print(F("\nStarting ESP32_ISR_MultiServos on ")); Serial.println(ARDUINO_BOARD);
+  //Serial.println(ESP32_ISR_SERVO_VERSION);
+
+  //Select ESP32 timer USE_ESP32_TIMER_NO
+  ESP32_ISR_Servos.useTimer(USE_ESP32_TIMER_NO);
+
+  left_motor = ESP32_ISR_Servos.setupServo(PIN_D1, MIN_MICROS, MAX_MICROS);
+  right_motor = ESP32_ISR_Servos.setupServo(PIN_D2, MIN_MICROS, MAX_MICROS);
+
+  if (left_motor != -1)
+    Serial.println(F("Setup Servo1 OK"));
+  else
+    Serial.println(F("Setup Servo1 failed"));
+
+  if (right_motor != -1)
+    Serial.println(F("Setup Servo2 OK"));
+  else
+    Serial.println(F("Setup Servo2 failed"));
+
   pixels.setPixelColor(0, 248, 255, 132, 50);
   pixels.setBrightness(100); // not so bright
   pixels.show();
@@ -305,7 +291,7 @@ void setup()
 
 }
 
-#define MOTOR_MID_PULSE 1450 // US
+#define MOTOR_MID_PULSE 90
 
 #define FWD_CONST 0.45 // degrees devoted to fwd/100
 #define TURN_CONST 0.45 // us devoted to turn/100
@@ -355,13 +341,13 @@ void loop()
     }
   }else if(cmd == 1){ // Point and shoot
   }else if(cmd == 2){ // Melty
-    left -= 250;
-    right += 250;
+    left -= 50;
+    right += 50;
   }
 
   // Set motors
-  mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_GEN_A, left);
-  mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_GEN_A, right);
+  ESP32_ISR_Servos.setPosition(left_motor, left);    // Send the signal to the ESC
+  ESP32_ISR_Servos.setPosition(right_motor, right);    // Send the signal to the ESC
 
 
   // ble_command_tare - getvalue
