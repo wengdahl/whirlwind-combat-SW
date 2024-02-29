@@ -305,7 +305,7 @@ void setup()
 
 }
 
-#define MOTOR_MID_PULSE 1450 // US
+#define MOTOR_MID_PULSE 1500 // US
 
 #define FWD_CONST 0.45 // degrees devoted to fwd/100
 #define TURN_CONST 0.45 // us devoted to turn/100
@@ -322,7 +322,17 @@ void loop()
     sensors_event_t event;
     accel.getEvent(&event);
 
-    float lin_x = event.acceleration.z-offset;
+    // Weird offset in X - thats why I own a bunch of buttons
+    // TODO add a calibration procedure w/lights
+    float lin_x = event.acceleration.x-7.69;
+    float lin_y = event.acceleration.y;
+    float lin_z = event.acceleration.z;
+
+    Serial.print(lin_x);
+    Serial.print(" ");
+    Serial.print(lin_y);
+    Serial.print(" ");
+    Serial.println(lin_z);
 
     start_time_sense =  millis();
     updateAccel(lin_x, 10); // TODO implement tare
