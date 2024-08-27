@@ -14,7 +14,7 @@
 #define DSHOT_ESC_RESOLUTION_HZ 40000000 // 40MHz resolution, DSHot protocol needs a relative high resolution
 #define DSHOT_ESC_GPIO_NUM_1      GPIO_NUM_1
 #define DSHOT_ESC_GPIO_NUM_2      GPIO_NUM_3
-#define DSHOT_ESC_GPIO_NUM_3      GPIO_NUM_5
+#define DSHOT_ESC_GPIO_NUM_3      GPIO_NUM_4
 
 static const char *TAG = "example";
 

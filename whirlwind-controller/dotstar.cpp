@@ -39,3 +39,8 @@ void dotstar_cycle() {
   }
   if(++tail >= NUMPIXELS) tail = 0; // Increment, reset tail index
 }
+
+void dotstar_set_red(){
+  strip.fill(0x0F0000, head, NUMPIXELS);
+  strip.show();                     // Refresh strip
+}

@@ -37,7 +37,8 @@
 
 #define CHANNEL 1
 
-#define DEBUG
+//#define DEBUG
+#define DEBUG_TIME
 
 // Init ESP Now with fallback
 void InitESPNow() {
@@ -88,9 +89,6 @@ void setup() {
   // Motors
   initialize_motors();
   delay(1000);
-  /*update_throttle(0, 1500);
-  update_throttle(1, 1500);
-  update_throttle(2, 1500);*/
 }
 static uint32_t last_time = 0;
 
@@ -101,12 +99,12 @@ static struct{
   signed char y; // -100 to 100
 } rec_data;
 
-uint16_t power[2] = {0, 0};
+uint16_t dshot_speed[2] = {0, 0};
 
 // callback when data is recv from Master
 void OnDataRecv(const esp_now_recv_info_t * info, const uint8_t *data, int data_len) {
-  #ifdef DEBUG
-  Serial.print("Last Packet Delay: "); Serial.println(millis()-last_time -100);
+  #ifdef DEBUG_TIME
+  Serial.print("Latency: "); Serial.println(millis()-last_time -100);
   #endif
   char macStr[18];
   snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
@@ -117,14 +115,31 @@ void OnDataRecv(const esp_now_recv_info_t * info, const uint8_t *data, int data_
   rec_data.x = (signed char)data[2];
   rec_data.y = (signed char)data[3];
 
-  // X throttle
-  if(rec_data.x < -5){
-    power[0] = (-1*rec_data.x)*10 +48;
-  }else if(rec_data.x < 5){
-     power[0] = 0;
+  // Left, right
+  int motor_pow[2] = {0, 0};
+
+  motor_pow[0] = constrain(rec_data.y - rec_data.x, -100, 100);
+  motor_pow[1] = constrain(rec_data.y + rec_data.x, -100, 100);
+
+  // left throttle
+  if(motor_pow[0] < -5){
+    dshot_speed[0] = (-1*motor_pow[0])*10 +47;
+  }else if(motor_pow[0] < 5){
+     dshot_speed[0] = 0;
   }else{
-     power[0] = min(rec_data.x*10 +1049, 2047);
+     dshot_speed[0] = min(motor_pow[0]*10 +1049, 2047);
   }
+
+  // Right throttle
+  if(motor_pow[1] < -5){
+    dshot_speed[1] = (-1*motor_pow[1])*10 +47;
+  }else if(motor_pow[1] < 5){
+     dshot_speed[1] = 0;
+  }else{
+     dshot_speed[1] = min(motor_pow[1]*10 +1049, 2047);
+  }
+
+
   #ifdef DEBUG
   Serial.print("Last Packet Recv from: "); Serial.println(macStr);
   Serial.print("Last Packet Recv Data: ");   
@@ -147,18 +162,22 @@ void OnDataRecv(const esp_now_recv_info_t * info, const uint8_t *data, int data_
   Serial.println(((signed char)data[3]));
 
   Serial.print("X-throttle");
-  Serial.println(power[0]);
+  Serial.println(dshot_speed[0]);
   Serial.print("Y-throttle");
-  Serial.println((10*(rec_data.y+100))+47);
+  Serial.println(dshot_speed[1]);
   #endif
 
   update_throttle(0, rec_data.weapon ? (20*rec_data.pot)+47: 0); // pot
-  update_throttle(1, power[0]); // x
-  update_throttle(2, (10*(rec_data.y+100))+47); // y
+  update_throttle(1, dshot_speed[0]); // x
+  update_throttle(2, dshot_speed[1]); // y
   last_time = millis();
 }
 
 void loop() {
-
-  delay(20);
+  if(millis()-last_time >1000){
+    update_throttle(0, 0); // pot
+    update_throttle(1, 0); // x
+    update_throttle(2, 0); // y
+  }
+  vTaskDelay(pdMS_TO_TICKS(10));
 }
